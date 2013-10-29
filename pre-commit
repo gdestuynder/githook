@@ -1,0 +1,55 @@
+#!/bin/sh
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2013 Mozilla Corporation
+# Author: <gdestuynder@mozilla.com>
+# Version: 1.0
+
+# Unique string, insert in sensitive files to ensure the hook catch them
+# Generated via openssl rand -hex 40
+STR_MATCH[0]="02a2f4e4967d5509e3b96919198d37dcabeb6ce9b02c7709ea3838f4f174a44a55f0fbba6481ed22"
+# Any PEM key
+MAGIC_MATCH[0]="private key"
+MAGIC_MATCH[1]="PGP key security ring"
+
+function match()
+{
+	saved_ifs=$IFS
+	IFS=" "
+	val=$*
+	IFS=$saved_ifs
+
+	for i in $( seq 0 $((${#MAGIC_MATCH[@]} - 1)) ); do
+		echo ${val} | grep -q "${MAGIC_MATCH[$i]}" && {
+			echo "Found sensitive data-type: ${MAGIC_MATCH[$i]}. Aborting commit."
+			exit 1
+		}
+	done
+
+	for i in $( seq 0 $((${#STR_MATCH[@]} - 1)) ); do
+		echo ${val} | grep -q "${STR_MATCH[$i]}" && {
+			echo "Found sensitive file. Aborting commit."
+			exit 2
+		}
+	done
+}
+
+function scan()
+{
+	for f in $*; do
+		match $(file -b -h -z ${f})
+	done
+}
+
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+	against=HEAD
+else
+	# Initial commit: diff against an empty tree object
+	against=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+fi
+
+scan $(git diff --cached --name-only $against)
